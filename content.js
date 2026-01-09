@@ -104,6 +104,66 @@
 		window.addEventListener("popstate", () => handleDetectedShorts(location.href, false), { passive: true });
 	})();
 
+	function isThumbnailAncestor(el) {
+		if (!el || el.nodeType !== 1) return null;
+		return el.closest && el.closest("ytd-thumbnail, ytd-rich-grid-media, ytd-video-renderer, ytd-rich-item-renderer, ytd-grid-video-renderer, .ytd-thumbnail, .yt-core-image");
+	}
+
+	function stopPreviewIn(node) {
+		if (!node) return;
+		const videos = node.querySelectorAll ? node.querySelectorAll("video") : [];
+		for (const v of videos) {
+			try {
+				// pause and remove autoplay attributes/sources that trigger preview
+				v.pause && v.pause();
+				v.removeAttribute && v.removeAttribute("autoplay");
+				v.autoplay = false;
+				v.muted = true;
+				// optional: reset currentTime to prevent resume
+				try { v.currentTime = 0; } catch (e) {}
+			} catch (e) {}
+		}
+	}
+
+	// capture mouseover/mouseenter on thumbnail ancestors and immediately pause any preview videos
+	document.addEventListener("mouseover", (e) => {
+		try {
+			const target = e.target;
+			const thumb = isThumbnailAncestor(target);
+			if (thumb) stopPreviewIn(thumb);
+		} catch (err) {}
+	}, { passive: true, capture: true });
+
+	// Also cover pointerenter (some previews start on pointerenter)
+	document.addEventListener("pointerenter", (e) => {
+		try {
+			const target = e.target;
+			const thumb = isThumbnailAncestor(target);
+			if (thumb) stopPreviewIn(thumb);
+		} catch (err) {}
+	}, { passive: true, capture: true });
+
+	// MutationObserver: pause/remove autoplay for videos added dynamically
+	const observer = new MutationObserver((mutations) => {
+		for (const m of mutations) {
+			if (m.addedNodes && m.addedNodes.length) {
+				for (const node of m.addedNodes) {
+					try {
+						if (node.nodeType === 1) {
+							// if a thumbnail-like node added, stop previews inside
+							if (isThumbnailAncestor(node) || node.querySelector && node.querySelector("video")) {
+								stopPreviewIn(node);
+							}
+						}
+					} catch (e) {}
+				}
+			}
+		}
+	});
+	try {
+		observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
+	} catch (e) {}
+
 	// initial check
 	handleDetectedShorts(location.href, false);
 
