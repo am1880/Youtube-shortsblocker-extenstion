@@ -176,30 +176,118 @@
 		}
 	}, 200);
 
-	// Identify specific coordinates and treat as hover
-	const TARGET_X = 194.78;
-	const TARGET_Y = 292.17;
-	const COORD_TOLERANCE = 1.0;
-	let atTargetPoint = false;
+	// add thumbnail-blanking constants and helpers
+	const TARGET_WIDTH = 194.78;
+	const TARGET_HEIGHT = 292.17;
+	const SIZE_TOLERANCE = 1.0;
 
-	document.addEventListener("mousemove", (e) => {
+	function isRectThumbnailSize(rect) {
 		try {
-			const x = e.clientX, y = e.clientY;
-			const near = Math.abs(x - TARGET_X) <= COORD_TOLERANCE && Math.abs(y - TARGET_Y) <= COORD_TOLERANCE;
-			if (near && !atTargetPoint) {
-				atTargetPoint = true;
-				// treat as hovering while at the point
-				isHovering = true;
-				// pause any preview video at that point
-				const el = document.elementFromPoint(x, y);
-				try { if (el) stopPreviewIn(el); } catch (err) {}
-				if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
-			} else if (!near && atTargetPoint) {
-				atTargetPoint = false;
-				// end hover state and schedule deferred checks
-				isHovering = false;
-				scheduleDeferredCheck();
+			if (!rect) return false;
+			const w = Math.abs(rect.width - TARGET_WIDTH);
+			const h = Math.abs(rect.height - TARGET_HEIGHT);
+			return w <= SIZE_TOLERANCE && h <= SIZE_TOLERANCE;
+		} catch (e) { return false; }
+	}
+
+	function blankThumbnail(node) {
+		if (!node || node.nodeType !== 1) return;
+		// avoid repeated work
+		if (node.dataset.__thumbBlanked === "1") return;
+		let rect;
+		try { rect = node.getBoundingClientRect(); } catch (e) { rect = null; }
+		if (!isRectThumbnailSize(rect)) return;
+		node.dataset.__thumbBlanked = "1";
+		// remove/disable videos
+		try {
+			const vids = node.querySelectorAll ? node.querySelectorAll("video") : [];
+			for (const v of vids) {
+				try { v.pause && v.pause(); v.removeAttribute && v.removeAttribute("src"); v.src = ""; v.load && v.load(); } catch (e) {}
 			}
-		} catch (err) {}
-	}, { passive: true, capture: true });
+		} catch (e) {}
+		// remove images
+		try {
+			const imgs = node.querySelectorAll ? node.querySelectorAll("img") : [];
+			for (const img of imgs) {
+				try { img.removeAttribute && img.removeAttribute("src"); img.src = ""; img.alt = ""; } catch (e) {}
+			}
+		} catch (e) {}
+		// neutralize styling but preserve layout
+		try {
+			if (rect) {
+				node.style.minWidth = rect.width + "px";
+				node.style.minHeight = rect.height + "px";
+			}
+			node.style.backgroundImage = "none";
+			node.style.background = "transparent";
+			node.style.pointerEvents = "none";
+			node.style.userSelect = "none";
+			node.innerHTML = "";
+		} catch (e) {}
+	}
+
+	function scanAndBlankAll() {
+		try {
+			const selectors = [
+				"ytd-thumbnail",
+				"ytd-rich-grid-media",
+				"ytd-video-renderer",
+				"ytd-grid-video-renderer",
+				"ytd-rich-item-renderer",
+				".ytd-thumbnail",
+				".yt-core-image",
+				"a[href]",
+				"div"
+			];
+			const seen = new Set();
+			for (const sel of selectors) {
+				const list = document.querySelectorAll ? document.querySelectorAll(sel) : [];
+				for (const node of list) {
+					if (!node || seen.has(node)) continue;
+					seen.add(node);
+					blankThumbnail(node);
+				}
+			}
+			const all = document.getElementsByTagName ? document.getElementsByTagName("*") : [];
+			for (let i = 0; i < Math.min(all.length, 5000); i++) {
+				const node = all[i];
+				if (!node || seen.has(node)) continue;
+				try {
+					const rect = node.getBoundingClientRect && node.getBoundingClientRect();
+					if (isRectThumbnailSize(rect)) blankThumbnail(node);
+				} catch (e) {}
+			}
+		} catch (e) {}
+	}
+
+	// observe DOM for additions/attribute changes
+	const blankObserver = new MutationObserver((mutations) => {
+		for (const m of mutations) {
+			if (m.addedNodes && m.addedNodes.length) {
+				for (const node of m.addedNodes) {
+					try {
+						if (node.nodeType !== 1) continue;
+						blankThumbnail(node);
+						if (node.querySelectorAll) {
+							const desc = node.querySelectorAll("ytd-thumbnail, img, video, .ytd-thumbnail, .yt-core-image, ytd-video-renderer");
+							for (const d of desc) blankThumbnail(d);
+						}
+					} catch (e) {}
+				}
+			}
+			if (m.type === "attributes" && m.target) {
+				try { blankThumbnail(m.target); } catch (e) {}
+			}
+		}
+	});
+	try {
+		blankObserver.observe(document.documentElement || document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["src", "style", "class"] });
+	} catch (e) {}
+
+	// re-scan on resize and periodically
+	window.addEventListener("resize", () => { try { scanAndBlankAll(); } catch (e) {} }, { passive: true });
+	setInterval(() => { try { scanAndBlankAll(); } catch (e) {} }, 2000);
+
+	// initial scan
+	try { scanAndBlankAll(); } catch (e) {}
 })();
