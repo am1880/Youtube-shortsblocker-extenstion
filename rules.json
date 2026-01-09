@@ -9,7 +9,21 @@
       }
     },
     "condition": {
-      "urlFilter": "youtube.com/shorts",
+      "urlFilter": "||youtube.com/shorts^",
+      "resourceTypes": ["main_frame"]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "url": "https://www.youtube.com/"
+      }
+    },
+    "condition": {
+      "regexFilter": "https?:\\/\\/(?:[^\\/]+\\.)?youtube\\.com\\/shorts\\/.*",
       "resourceTypes": ["main_frame"]
     }
   }
