@@ -231,24 +231,21 @@
 	})();
 
 	// add thumbnail-blanking constants and helpers
-	// replace fixed size targets with aspect-ratio based detection
-	const TARGET_RATIOS = [
-		2 / 3,   // ~0.6667 (portrait 2:3)
-		9 / 16   // ~0.5625 (portrait 9:16)
+	// accept multiple thumbnail target sizes
+	const TARGET_SIZES = [
+		{ width: 194.78, height: 292.17 },
+		{ width: 272.18, height: 408.27 }
 	];
-	const RATIO_TOLERANCE = 0.08; // allowable deviation from target ratio
+	const SIZE_TOLERANCE = 1.0;
 
 	function isRectThumbnailSize(rect) {
 		try {
-			if (!rect || !rect.width || !rect.height) return false;
-			const ratio = rect.width / rect.height;
-			for (const tr of TARGET_RATIOS) {
-				if (Math.abs(ratio - tr) <= RATIO_TOLERANCE) return true;
-			}
-			// fallback: some elements may report swapped dims; check inverse
-			const inv = rect.height / rect.width;
-			for (const tr of TARGET_RATIOS) {
-				if (Math.abs(inv - tr) <= RATIO_TOLERANCE) return true;
+			if (!rect) return false;
+			for (const t of TARGET_SIZES) {
+				if (Math.abs(rect.width - t.width) <= SIZE_TOLERANCE &&
+					Math.abs(rect.height - t.height) <= SIZE_TOLERANCE) {
+					return true;
+				}
 			}
 			return false;
 		} catch (e) { return false; }
