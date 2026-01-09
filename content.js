@@ -4,6 +4,17 @@
 	let hoverTimer = null;
 	let pendingShortsUrl = null;
 
+	// only run actions when the YouTube tab is visible and focused
+	let isActive = (document.visibilityState === "visible" && document.hasFocus());
+	document.addEventListener("visibilitychange", () => {
+		isActive = (document.visibilityState === "visible" && document.hasFocus());
+		if (isActive) {
+			try { scanAndBlankAll(); } catch (e) {}
+		}
+	}, { passive: true });
+	window.addEventListener("focus", () => { isActive = true; try { scanAndBlankAll(); } catch (e) {} }, { passive: true });
+	window.addEventListener("blur", () => { isActive = false; }, { passive: true });
+
 	function isShortsUrl(url) {
 		if (!url) return false;
 		try {
@@ -19,6 +30,7 @@
 	}
 
 	function handleDetectedShorts(url, userInitiated = false) {
+		if (!isActive) return;
 		if (!isShortsUrl(url)) return;
 		// If user clicked (userInitiated) block immediately; otherwise defer if hovering
 		if (userInitiated || !isHovering) {
@@ -79,6 +91,8 @@
 
 	// Early interceptors: pointer/mouse/touch/auxclick in capture phase to block navigation to /shorts immediately
 	function interceptNavEvent(e, userInitiated = true) {
+		// only intercept when active
+		if (!isActive) return;
 		try {
 			if (e.defaultPrevented) return;
 			const path = e.composedPath ? e.composedPath() : [e.target];
@@ -88,7 +102,7 @@
 				if (el.tagName && el.tagName.toLowerCase() === "a" && el.href) {
 					if (isShortsUrl(el.href)) {
 						e.preventDefault();
-						e.stopImmediatePropagation && e.stopImmediatePropagation();
+						e.stopImmediatePropagation();
 						// open HOME in new tab if requested, else replace current
 						if (e.button === 1 || e.ctrlKey || e.metaKey) window.open(HOME, "_blank");
 						else location.replace(HOME);
@@ -99,7 +113,7 @@
 				const hrefAttr = el.getAttribute && (el.getAttribute("href") || el.getAttribute("data-href") || el.dataset && el.dataset.href);
 				if (hrefAttr && isShortsUrl(hrefAttr)) {
 					e.preventDefault();
-					e.stopImmediatePropagation && e.stopImmediatePropagation();
+					e.stopImmediatePropagation();
 					if (e.button === 1 || e.ctrlKey || e.metaKey) window.open(HOME, "_blank");
 					else location.replace(HOME);
 					return;
@@ -207,7 +221,7 @@
 	let last = location.href;
 	(function watchHref(){
 		try {
-			if (location.href !== last) {
+			if (isActive && location.href !== last) {
 				last = location.href;
 				// use existing redirect handling
 				try { redirectIfShorts(last); } catch (e) {}
@@ -238,6 +252,8 @@
 	}
 
 	function blankThumbnail(node) {
+		// only blank when active
+		if (!isActive) return;
 		if (!node || node.nodeType !== 1) return;
 		// avoid repeated work
 		if (node.dataset.__thumbBlanked === "1") return;
@@ -274,6 +290,8 @@
 	}
 
 	function scanAndBlankAll() {
+		// don't scan when inactive
+		if (!isActive) return;
 		try {
 			const selectors = [
 				"ytd-thumbnail",
