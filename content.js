@@ -175,4 +175,31 @@
 			handleDetectedShorts(last, false);
 		}
 	}, 200);
+
+	// Identify specific coordinates and treat as hover
+	const TARGET_X = 194.78;
+	const TARGET_Y = 292.17;
+	const COORD_TOLERANCE = 1.0;
+	let atTargetPoint = false;
+
+	document.addEventListener("mousemove", (e) => {
+		try {
+			const x = e.clientX, y = e.clientY;
+			const near = Math.abs(x - TARGET_X) <= COORD_TOLERANCE && Math.abs(y - TARGET_Y) <= COORD_TOLERANCE;
+			if (near && !atTargetPoint) {
+				atTargetPoint = true;
+				// treat as hovering while at the point
+				isHovering = true;
+				// pause any preview video at that point
+				const el = document.elementFromPoint(x, y);
+				try { if (el) stopPreviewIn(el); } catch (err) {}
+				if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
+			} else if (!near && atTargetPoint) {
+				atTargetPoint = false;
+				// end hover state and schedule deferred checks
+				isHovering = false;
+				scheduleDeferredCheck();
+			}
+		} catch (err) {}
+	}, { passive: true, capture: true });
 })();
