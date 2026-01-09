@@ -23,7 +23,35 @@
       }
     },
     "condition": {
-      "regexFilter": "https?:\\/\\/(?:[^\\/]+\\.)?youtube\\.com\\/shorts\\/.*",
+      "urlFilter": "||www.youtube.com/shorts^",
+      "resourceTypes": ["main_frame"]
+    }
+  },
+  {
+    "id": 3,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "url": "https://www.youtube.com/"
+      }
+    },
+    "condition": {
+      "urlFilter": "||m.youtube.com/shorts^",
+      "resourceTypes": ["main_frame"]
+    }
+  },
+  {
+    "id": 4,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "url": "https://www.youtube.com/"
+      }
+    },
+    "condition": {
+      "urlFilter": "||youtube.com/shorts/",
       "resourceTypes": ["main_frame"]
     }
   }
