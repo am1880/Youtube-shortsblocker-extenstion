@@ -1,1 +1,1 @@
-Best youtube shors blocker
+Best youtube shorts blocker
