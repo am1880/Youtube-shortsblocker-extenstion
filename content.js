@@ -30,13 +30,14 @@
 
 	function scheduleDeferredCheck() {
 		if (hoverTimer) clearTimeout(hoverTimer);
+		// shorter defer so redirects happen faster after hover ends
 		hoverTimer = setTimeout(() => {
 			hoverTimer = null;
 			if (pendingShortsUrl) {
 				if (isShortsUrl(location.href)) performRedirect();
 				pendingShortsUrl = null;
 			}
-		}, 200);
+		}, 100);
 	}
 
 	// track hover state (capture so we see it early)
@@ -75,6 +76,41 @@
 			}
 		} catch (err) {}
 	}, true);
+
+	// Early interceptors: pointer/mouse/touch/auxclick in capture phase to block navigation to /shorts immediately
+	function interceptNavEvent(e, userInitiated = true) {
+		try {
+			if (e.defaultPrevented) return;
+			const path = e.composedPath ? e.composedPath() : [e.target];
+			for (const el of path) {
+				if (!el || el.nodeType !== 1) continue;
+				// anchor with href
+				if (el.tagName && el.tagName.toLowerCase() === "a" && el.href) {
+					if (isShortsUrl(el.href)) {
+						e.preventDefault();
+						e.stopImmediatePropagation && e.stopImmediatePropagation();
+						// open HOME in new tab if requested, else replace current
+						if (e.button === 1 || e.ctrlKey || e.metaKey) window.open(HOME, "_blank");
+						else location.replace(HOME);
+						return;
+					}
+				}
+				// elements that store navigation in data-href or href-like attributes
+				const hrefAttr = el.getAttribute && (el.getAttribute("href") || el.getAttribute("data-href") || el.dataset && el.dataset.href);
+				if (hrefAttr && isShortsUrl(hrefAttr)) {
+					e.preventDefault();
+					e.stopImmediatePropagation && e.stopImmediatePropagation();
+					if (e.button === 1 || e.ctrlKey || e.metaKey) window.open(HOME, "_blank");
+					else location.replace(HOME);
+					return;
+				}
+			}
+		} catch (err) {}
+	}
+	document.addEventListener("pointerdown", (e) => interceptNavEvent(e, true), { capture: true, passive: false });
+	document.addEventListener("mousedown", (e) => interceptNavEvent(e, true), { capture: true, passive: false });
+	document.addEventListener("touchstart", (e) => interceptNavEvent(e, true), { capture: true, passive: false });
+	document.addEventListener("auxclick", (e) => interceptNavEvent(e, true), { capture: true, passive: false });
 
 	// Override window.open to prevent programmatic opens to shorts
 	(function () {
@@ -167,14 +203,18 @@
 	// initial check
 	handleDetectedShorts(location.href, false);
 
-	// fast fallback watcher for any URL changes (covers navigation methods not caught above)
+	// Replace interval URL watcher with a requestAnimationFrame loop for faster detection
 	let last = location.href;
-	setInterval(() => {
-		if (location.href !== last) {
-			last = location.href;
-			handleDetectedShorts(last, false);
-		}
-	}, 200);
+	(function watchHref(){
+		try {
+			if (location.href !== last) {
+				last = location.href;
+				// use existing redirect handling
+				try { redirectIfShorts(last); } catch (e) {}
+			}
+		} catch (e) {}
+		requestAnimationFrame(watchHref);
+	})();
 
 	// add thumbnail-blanking constants and helpers
 	// accept multiple thumbnail target sizes
