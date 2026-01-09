@@ -177,16 +177,23 @@
 	}, 200);
 
 	// add thumbnail-blanking constants and helpers
-	const TARGET_WIDTH = 194.78;
-	const TARGET_HEIGHT = 292.17;
+	// accept multiple thumbnail target sizes
+	const TARGET_SIZES = [
+		{ width: 194.78, height: 292.17 },
+		{ width: 272.18, height: 408.27 }
+	];
 	const SIZE_TOLERANCE = 1.0;
 
 	function isRectThumbnailSize(rect) {
 		try {
 			if (!rect) return false;
-			const w = Math.abs(rect.width - TARGET_WIDTH);
-			const h = Math.abs(rect.height - TARGET_HEIGHT);
-			return w <= SIZE_TOLERANCE && h <= SIZE_TOLERANCE;
+			for (const t of TARGET_SIZES) {
+				if (Math.abs(rect.width - t.width) <= SIZE_TOLERANCE &&
+					Math.abs(rect.height - t.height) <= SIZE_TOLERANCE) {
+					return true;
+				}
+			}
+			return false;
 		} catch (e) { return false; }
 	}
 
