@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Block YouTube Shorts",
-  "version": "1.3",
+  "version": "1.22",
   "description": "Blocks YouTube Shorts and redirects to YouTube home",
   "permissions": ["declarativeNetRequest"],
   "host_permissions": ["*://*.youtube.com/*"],
