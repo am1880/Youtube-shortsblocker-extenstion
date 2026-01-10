@@ -4,6 +4,10 @@
 	let hoverTimer = null;
 	let pendingShortsUrl = null;
 
+	// new: track short-lived user-initiated interactions targeting Shorts
+	let lastUserInitiatedShorts = false;
+	let userShortsTimer = null;
+
 	// only run actions when the YouTube tab is visible and focused
 	let isActive = (document.visibilityState === "visible" && document.hasFocus());
 	document.addEventListener("visibilitychange", () => {
@@ -23,6 +27,25 @@
 		} catch (e) {
 			return String(url).includes("/shorts/");
 		}
+	}
+
+	// new helper: try to detect Shorts UI elements even if they aren't simple anchors
+	function elementRepresentsShorts(el) {
+		if (!el || el.nodeType !== 1) return false;
+		try {
+			// anchor with absolute href
+			if (el.tagName && el.tagName.toLowerCase() === "a" && el.href && isShortsUrl(el.href)) return true;
+			// href-like attributes (relative or data-href)
+			const hrefAttr = el.getAttribute && (el.getAttribute("href") || el.getAttribute("data-href") || (el.dataset && el.dataset.href));
+			if (hrefAttr && isShortsUrl(hrefAttr)) return true;
+			// aria-label/title/alt mentioning "shorts"
+			const aria = el.getAttribute && (el.getAttribute("aria-label") || el.getAttribute("title") || el.getAttribute("alt"));
+			if (aria && /shorts/i.test(aria)) return true;
+			// visible text mention (some buttons display "Shorts")
+			const txt = (el.textContent || "").trim();
+			if (txt && /\bShorts\b/i.test(txt)) return true;
+		} catch (e) {}
+		return false;
 	}
 
 	function performRedirect() {
@@ -63,6 +86,23 @@
 		scheduleDeferredCheck();
 	}, { passive: true, capture: true });
 
+	// track pointer interactions so SPA pushState navigations can be treated as user-initiated
+	document.addEventListener("pointerdown", (e) => {
+		try {
+			const path = e.composedPath ? e.composedPath() : [e.target];
+			for (const el of path) {
+				if (!el) continue;
+				if (elementRepresentsShorts(el)) {
+					// mark as user-initiated for a short window
+					lastUserInitiatedShorts = true;
+					if (userShortsTimer) clearTimeout(userShortsTimer);
+					userShortsTimer = setTimeout(() => { lastUserInitiatedShorts = false; userShortsTimer = null; }, 500);
+					break;
+				}
+			}
+		} catch (err) {}
+	}, { capture: true, passive: true });
+
 	// Intercept clicks on anchors (capture phase) to prevent navigation to /shorts
 	document.addEventListener("click", (e) => {
 		try {
@@ -72,6 +112,7 @@
 				if (!el) continue;
 				// stop at document boundaries
 				if (el.nodeType !== 1) continue;
+				// anchor handling (existing)
 				if (el.tagName && el.tagName.toLowerCase() === "a" && el.href) {
 					if (isShortsUrl(el.href)) {
 						e.preventDefault();
@@ -84,6 +125,14 @@
 						}
 						return;
 					}
+				}
+				// new: non-anchor elements that clearly represent Shorts (buttons, labels, etc.)
+				if (elementRepresentsShorts(el)) {
+					e.preventDefault();
+					e.stopImmediatePropagation();
+					if (e.button === 1 || e.ctrlKey || e.metaKey) window.open(HOME, "_blank");
+					else location.replace(HOME);
+					return;
 				}
 			}
 		} catch (err) {}
@@ -108,6 +157,14 @@
 						else location.replace(HOME);
 						return;
 					}
+				}
+				// new: detect non-anchor Shorts elements (buttons etc.)
+				if (elementRepresentsShorts(el)) {
+					e.preventDefault();
+					e.stopImmediatePropagation();
+					if (e.button === 1 || e.ctrlKey || e.metaKey) window.open(HOME, "_blank");
+					else location.replace(HOME);
+					return;
 				}
 				// elements that store navigation in data-href or href-like attributes
 				const hrefAttr = el.getAttribute && (el.getAttribute("href") || el.getAttribute("data-href") || el.dataset && el.dataset.href);
@@ -143,15 +200,15 @@
 		const origReplace = history.replaceState;
 		history.pushState = function () {
 			const res = origPush.apply(this, arguments);
-			try { handleDetectedShorts(location.href, false); } catch (e) {}
+			try { handleDetectedShorts(location.href, !!lastUserInitiatedShorts); } catch (e) {}
 			return res;
 		};
 		history.replaceState = function () {
 			const res = origReplace.apply(this, arguments);
-			try { handleDetectedShorts(location.href, false); } catch (e) {}
+			try { handleDetectedShorts(location.href, !!lastUserInitiatedShorts); } catch (e) {}
 			return res;
 		};
-		window.addEventListener("popstate", () => handleDetectedShorts(location.href, false), { passive: true });
+		window.addEventListener("popstate", () => handleDetectedShorts(location.href, !!lastUserInitiatedShorts), { passive: true });
 	})();
 
 	function isThumbnailAncestor(el) {
@@ -224,7 +281,7 @@
 			if (isActive && location.href !== last) {
 				last = location.href;
 				// use existing redirect handling
-				try { redirectIfShorts(last); } catch (e) {}
+				try { handleDetectedShorts(last, !!lastUserInitiatedShorts); } catch (e) {}
 			}
 		} catch (e) {}
 		requestAnimationFrame(watchHref);
