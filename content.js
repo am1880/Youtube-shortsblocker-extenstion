@@ -29,6 +29,26 @@
 		}
 	}
 
+	// new helper: whether an element is actually interactive/clickable
+	function isInteractive(el) {
+		if (!el || el.nodeType !== 1) return false;
+		try {
+			const tag = el.tagName && el.tagName.toLowerCase();
+			if (tag === "a" || tag === "button" || tag === "input" || tag === "textarea" || tag === "select") return true;
+			const role = el.getAttribute && el.getAttribute("role");
+			if (role && /button|link/i.test(role)) return true;
+			if (el.hasAttribute && (el.hasAttribute("onclick") || el.getAttribute("tabindex") !== null)) return true;
+			// small heuristic for youtube components
+			const dt = el.getAttribute && el.getAttribute("data-testid");
+			if (dt && /shorts|button|nav/i.test(dt)) return true;
+			try {
+				const cs = window.getComputedStyle(el);
+				if (cs && (cs.pointerEvents !== "none") && (cs.cursor === "pointer" || cs.cursor === "hand")) return true;
+			} catch (e) {}
+		} catch (e) {}
+		return false;
+	}
+
 	// new helper: try to detect Shorts UI elements even if they aren't simple anchors
 	function elementRepresentsShorts(el) {
 		if (!el || el.nodeType !== 1) return false;
@@ -38,12 +58,12 @@
 			// href-like attributes (relative or data-href)
 			const hrefAttr = el.getAttribute && (el.getAttribute("href") || el.getAttribute("data-href") || (el.dataset && el.dataset.href));
 			if (hrefAttr && isShortsUrl(hrefAttr)) return true;
-			// aria-label/title/alt mentioning "shorts"
+			// only consider aria/title/alt/text if the element is interactive (reduces false positives)
+			if (!isInteractive(el)) return false;
 			const aria = el.getAttribute && (el.getAttribute("aria-label") || el.getAttribute("title") || el.getAttribute("alt"));
 			if (aria && /shorts/i.test(aria)) return true;
-			// visible text mention (some buttons display "Shorts")
 			const txt = (el.textContent || "").trim();
-			if (txt && /\bShorts\b/i.test(txt)) return true;
+			if (txt && /\bShorts\b/i.test(txt) && txt.length < 40) return true;
 		} catch (e) {}
 		return false;
 	}
@@ -92,13 +112,14 @@
 			const path = e.composedPath ? e.composedPath() : [e.target];
 			for (const el of path) {
 				if (!el) continue;
+				// only look at the first interactive element in the path
+				if (!isInteractive(el)) continue;
 				if (elementRepresentsShorts(el)) {
-					// mark as user-initiated for a short window
 					lastUserInitiatedShorts = true;
 					if (userShortsTimer) clearTimeout(userShortsTimer);
 					userShortsTimer = setTimeout(() => { lastUserInitiatedShorts = false; userShortsTimer = null; }, 500);
-					break;
 				}
+				break;
 			}
 		} catch (err) {}
 	}, { capture: true, passive: true });
@@ -108,32 +129,29 @@
 		try {
 			if (e.defaultPrevented) return;
 			const path = e.composedPath ? e.composedPath() : [e.target];
+			// first, check for any anchor with a shorts href (existing behavior)
 			for (let el of path) {
 				if (!el) continue;
-				// stop at document boundaries
 				if (el.nodeType !== 1) continue;
-				// anchor handling (existing)
-				if (el.tagName && el.tagName.toLowerCase() === "a" && el.href) {
-					if (isShortsUrl(el.href)) {
-						e.preventDefault();
-						e.stopImmediatePropagation();
-						// if user requested new tab, open HOME in new tab, else redirect current
-						if (e.button === 1 || e.ctrlKey || e.metaKey) {
-							window.open(HOME, "_blank");
-						} else {
-							location.replace(HOME);
-						}
-						return;
-					}
-				}
-				// new: non-anchor elements that clearly represent Shorts (buttons, labels, etc.)
-				if (elementRepresentsShorts(el)) {
+				if (el.tagName && el.tagName.toLowerCase() === "a" && el.href && isShortsUrl(el.href)) {
 					e.preventDefault();
 					e.stopImmediatePropagation();
 					if (e.button === 1 || e.ctrlKey || e.metaKey) window.open(HOME, "_blank");
 					else location.replace(HOME);
 					return;
 				}
+			}
+			// then check the first interactive element for a Shorts label/icon
+			for (let el of path) {
+				if (!el || el.nodeType !== 1) continue;
+				if (!isInteractive(el)) continue;
+				if (elementRepresentsShorts(el)) {
+					e.preventDefault();
+					e.stopImmediatePropagation();
+					if (e.button === 1 || e.ctrlKey || e.metaKey) window.open(HOME, "_blank");
+					else location.replace(HOME);
+				}
+				break;
 			}
 		} catch (err) {}
 	}, true);
@@ -145,20 +163,21 @@
 		try {
 			if (e.defaultPrevented) return;
 			const path = e.composedPath ? e.composedPath() : [e.target];
+			// prioritize anchors (exact hrefs)
 			for (const el of path) {
 				if (!el || el.nodeType !== 1) continue;
-				// anchor with href
-				if (el.tagName && el.tagName.toLowerCase() === "a" && el.href) {
-					if (isShortsUrl(el.href)) {
-						e.preventDefault();
-						e.stopImmediatePropagation();
-						// open HOME in new tab if requested, else replace current
-						if (e.button === 1 || e.ctrlKey || e.metaKey) window.open(HOME, "_blank");
-						else location.replace(HOME);
-						return;
-					}
+				if (el.tagName && el.tagName.toLowerCase() === "a" && el.href && isShortsUrl(el.href)) {
+					e.preventDefault();
+					e.stopImmediatePropagation();
+					if (e.button === 1 || e.ctrlKey || e.metaKey) window.open(HOME, "_blank");
+					else location.replace(HOME);
+					return;
 				}
-				// new: detect non-anchor Shorts elements (buttons etc.)
+			}
+			// otherwise check the first interactive element only
+			for (const el of path) {
+				if (!el || el.nodeType !== 1) continue;
+				if (!isInteractive(el)) continue;
 				if (elementRepresentsShorts(el)) {
 					e.preventDefault();
 					e.stopImmediatePropagation();
@@ -166,7 +185,7 @@
 					else location.replace(HOME);
 					return;
 				}
-				// elements that store navigation in data-href or href-like attributes
+				// check href-like attributes on the interactive element
 				const hrefAttr = el.getAttribute && (el.getAttribute("href") || el.getAttribute("data-href") || el.dataset && el.dataset.href);
 				if (hrefAttr && isShortsUrl(hrefAttr)) {
 					e.preventDefault();
@@ -175,6 +194,7 @@
 					else location.replace(HOME);
 					return;
 				}
+				break;
 			}
 		} catch (err) {}
 	}
